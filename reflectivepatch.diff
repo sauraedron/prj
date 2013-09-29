@@ -1,0 +1,12 @@
+Index: source/blender/collada/DocumentImporter.cpp
+===================================================================
+--- source/blender/collada/DocumentImporter.cpp	(revision 60391)
++++ source/blender/collada/DocumentImporter.cpp	(working copy)
+@@ -830,6 +830,7 @@
+ 		ma->mirr = col.getRed();
+ 		ma->mirg = col.getGreen();
+ 		ma->mirb = col.getBlue();
++        ma->mode = MA_RAYMIRROR;
+ 	}
+ 	// texture
+ 	else if (ef->getReflective().isTexture()) {
