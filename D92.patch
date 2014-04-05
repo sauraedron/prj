@@ -1,0 +1,151 @@
+Index: source/blender/collada/MeshImporter.h
+===================================================================
+--- source/blender/collada/MeshImporter.h
++++ source/blender/collada/MeshImporter.h
+@@ -1,16 +1,28 @@
+ #ifdef COLLADA_DEBUG
+ 	void print();
+ #endif
+-
+ 	void getUV(int uv_index, float *uv);
+ };
+ 
++class VCOLDataWrapper
++{
++	COLLADAFW::MeshVertexData *mVData;
++public:
++	VCOLDataWrapper(COLLADAFW::MeshVertexData& vdata);
++	void getvcol(int v_index,MLoopCol *mloopcol);
++};
++
+ class MeshImporter : public MeshImporterBase
+ {
+ private:
+ 					 int loop_index,
+ 					 COLLADAFW::IndexList& index_list,
+ 					 int count);
++	void set_vcol(MLoopCol *mloopcol,
++	              VCOLDataWrapper &vob,
++	              int loop_index,
++	              COLLADAFW::IndexList& index_list,
++	              int count);
+ 
+ #ifdef COLLADA_DEBUG
+ 	void print_index_list(COLLADAFW::IndexList& index_list);
+Index: source/blender/collada/MeshImporter.cpp
+===================================================================
+--- source/blender/collada/MeshImporter.cpp
++++ source/blender/collada/MeshImporter.cpp
+@@ -1,43 +1,112 @@
+ 	}
+ }
+ 
++VCOLDataWrapper::VCOLDataWrapper(COLLADAFW::MeshVertexData& vdata) : mVData(&vdata)
++{
++
++}
++
++void VCOLDataWrapper::getvcol(int v_index, MLoopCol *mloopcol)
++{
++	int stride = mVData->getStride(0);
++	if(stride == 0)  stride =3;
++
++	switch (mVData->getType()) {
++		case COLLADAFW::MeshVertexData::DATA_TYPE_FLOAT:
++		{
++			COLLADAFW::ArrayPrimitiveType<float> *values = mVData->getFloatValues();
++			if (values->empty()) return;
++			mloopcol->r = FTOCHAR((*values)[v_index * stride]);
++			mloopcol->g = FTOCHAR((*values)[v_index * stride + 1]);
++			mloopcol->b = FTOCHAR((*values)[v_index * stride + 2]);
++
++		}
++		break;
++		case COLLADAFW::MeshVertexData::DATA_TYPE_DOUBLE:
++		{
++			COLLADAFW::ArrayPrimitiveType<double> *values = mVData->getDoubleValues();
++			if (values->empty()) return;
++			mloopcol->r = FTOCHAR((*values)[v_index * stride]);
++			mloopcol->g = FTOCHAR((*values)[v_index * stride + 1]);
++			mloopcol->b = FTOCHAR((*values)[v_index * stride + 2]);
++
++		}
++		break;
++		default:
++			fprintf(stderr, "VCOLDataWrapper.getvcol(): unknown data type\n");
++	}
++
++}
++
+ MeshImporter::MeshImporter(UnitConverter *unitconv, ArmatureImporter *arm, Scene *sce) : unitconverter(unitconv), scene(sce), armature_importer(arm) {
+ }
+ 
+ 	}
+ }
+ 
++void MeshImporter::set_vcol(MLoopCol *mlc, VCOLDataWrapper &vob, int loop_index, COLLADAFW::IndexList &index_list, int count)
++{
++	COLLADAFW::UIntValuesArray& indices =index_list.getIndices();
++	int index;
++	for(index = 0; index < count; index++,mlc++)
++	{
++		int v_index = indices[index+loop_index];
++		vob.getvcol(v_index,mlc);
++	}
++}
++
+ void MeshImporter::set_face_uv(MLoopUV *mloopuv, UVDataWrapper &uvs,
+                                int start_index, COLLADAFW::IndexList& index_list, int count)
+ {
+ 			me->mtpoly  = (MTexPoly *)CustomData_get_layer_n(&me->pdata, CD_MTEXPOLY, 0);
+ 			me->mloopuv = (MLoopUV *) CustomData_get_layer_n(&me->ldata, CD_MLOOPUV, 0);
+ 		}
++
+ 	}
+ }
+ 
+ 	allocate_poly_data(collada_mesh, me);
+ 
+ 	UVDataWrapper uvs(collada_mesh->getUVCoords());
++	VCOLDataWrapper vcol(collada_mesh->getColors());
+ 
+ 	MPoly *mpoly = me->mpoly;
+ 	MLoop *mloop = me->mloop;
+ 
+ 	COLLADAFW::MeshPrimitiveArray& prim_arr = collada_mesh->getMeshPrimitives();
+ 	COLLADAFW::MeshVertexData& nor = collada_mesh->getNormals();
++	COLLADAFW::MeshPrimitive *mpa = prim_arr[0];
++
++	MLoopCol *mloopcol;
++	if(mpa->hasColorIndices())
++	{
++		CustomData_add_layer(&me->ldata,CD_MLOOPCOL,CD_DEFAULT,NULL,me->totloop);
++		me->mloopcol = (MLoopCol *) CustomData_get_layer(&me->ldata,CD_MLOOPCOL);
++		mloopcol = (MLoopCol *)CustomData_get_layer(&me->ldata,CD_MLOOPCOL);
++	}
+ 
+ 	for (i = 0; i < prim_arr.getCount(); i++) {
+ 		
+ 		COLLADAFW::MeshPrimitive *mp = prim_arr[i];
+ 							mpoly->flag |= ME_SMOOTH;
+ 						normal_indices++;
+ 					}
++
+ 				
+ 					mpoly++;
+ 					mloop += 3;
+ 					if (!is_flat_face(normal_indices, nor, vcount))
+ 						mpoly->flag |= ME_SMOOTH;
+ 				}
++				if(mp->hasColorIndices())
++				{
++					COLLADAFW::IndexListArray& index_list_array_vcolor =mp->getColorIndicesArray();
++					for(unsigned int vcolor_index = 0 ; vcolor_index < index_list_array_vcolor.getCount();vcolor_index++)
++					{
++						MLoopCol *mlc = mloopcol+mpoly->loopstart;
++						set_vcol(mlc, vcol, start_index, *index_list_array_vcolor[vcolor_index],vcount);
++					}
++				}
+ 				
+ 				mpoly++;
+ 				mloop += vcount;

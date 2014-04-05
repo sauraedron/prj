@@ -1,0 +1,52 @@
+diff --git a/source/blender/collada/GeometryExporter.cpp b/source/blender/collada/GeometryExporter.cpp
+index 3d5d79f..88af2fc 100644
+--- a/source/blender/collada/GeometryExporter.cpp
++++ b/source/blender/collada/GeometryExporter.cpp
+@@ -154,8 +154,18 @@ void GeometryExporter::operator()(Object *ob)
+ 
+ 	if (this->export_settings->include_shapekeys) {
+ 		Key * key = BKE_key_from_object(ob);
++
+ 		if (key) {
+ 			KeyBlock * kb = (KeyBlock *)key->block.first;
++			BKE_key_convert_to_mesh(kb,me);
++			MVert *basis = me->mvert;
++			printf("\n+++++++");
++			for (int i = 0; i <me->totvert; i++) {
++				//source.appendValues(verts[i].co[0], verts[i].co[1], verts[i].co[2]);
++				printf("\n%f\t%f\t%f",basis[i].co[0], basis[i].co[1], basis[i].co[2]);
++
++			}
++			printf("\nEnd of basis\n");
+ 			//skip the basis
+ 			kb = kb->next;
+ 			for (; kb; kb = kb->next) {
+@@ -192,6 +202,7 @@ void GeometryExporter::export_key_mesh(Object *ob, Mesh *me, KeyBlock *kb)
+ 	openMesh(geom_id, geom_name);
+ 	
+ 	// writes <source> for vertex coords
++	printf("\n***********");
+ 	createVertsSource(geom_id, me);
+ 	
+ 	// writes <source> for normal coords
+@@ -413,6 +424,8 @@ void GeometryExporter::createVertsSource(std::string geom_id, Mesh *me)
+ #endif
+ 	int totverts = me->totvert;
+ 	MVert *verts = me->mvert;
++
++	static int ctr=0;
+ 	
+ 	COLLADASW::FloatSourceF source(mSW);
+ 	source.setId(getIdBySemantics(geom_id, COLLADASW::InputSemantic::POSITION));
+@@ -429,8 +442,11 @@ void GeometryExporter::createVertsSource(std::string geom_id, Mesh *me)
+ 	source.prepareToAppendValues();
+ 	//appends data to <float_array>
+ 	int i = 0;
++
+ 	for (i = 0; i < totverts; i++) {
+ 		source.appendValues(verts[i].co[0], verts[i].co[1], verts[i].co[2]);
++		printf("\n%d\t%f\t%f\t%f",ctr,verts[i].co[0], verts[i].co[1], verts[i].co[2]);
++		ctr++;
+ 	}
+ 	
+ 	source.finish();
