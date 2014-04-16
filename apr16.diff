@@ -1,0 +1,320 @@
+diff --git a/source/blender/collada/GeometryExporter.cpp b/source/blender/collada/GeometryExporter.cpp
+index 3d5d79f..50c3b67 100644
+--- a/source/blender/collada/GeometryExporter.cpp
++++ b/source/blender/collada/GeometryExporter.cpp
+@@ -70,6 +70,10 @@ void GeometryExporter::exportGeom(Scene *sce)
+ 
+ void GeometryExporter::operator()(Object *ob)
+ { 
++	static std::vector<float>	b_x;
++	static std::vector<float>	b_y;
++	static std::vector<float>	b_z;
++	static std::vector<int>		diff;
+ 	// XXX don't use DerivedMesh, Mesh instead?
+ #if 0		
+ 	DerivedMesh *dm = mesh_get_derived_final(mScene, ob, CD_MASK_BAREMESH);
+@@ -105,7 +109,7 @@ void GeometryExporter::operator()(Object *ob)
+ 	openMesh(geom_id, geom_name);
+ 	
+ 	// writes <source> for vertex coords
+-	createVertsSource(geom_id, me);
++	createVertsSource(geom_id, me, b_x,b_y, b_z, diff, true);
+ 	
+ 	// writes <source> for normal coords
+ 	createNormalsSource(geom_id, me, nor);
+@@ -160,7 +164,7 @@ void GeometryExporter::operator()(Object *ob)
+ 			kb = kb->next;
+ 			for (; kb; kb = kb->next) {
+ 				BKE_key_convert_to_mesh(kb, me);
+-				export_key_mesh(ob, me, kb);
++				export_key_mesh(ob, me, kb, b_x, b_y, b_z, diff);
+ 			}
+ 		}
+ 	}
+@@ -169,7 +173,7 @@ void GeometryExporter::operator()(Object *ob)
+ 
+ }
+ 
+-void GeometryExporter::export_key_mesh(Object *ob, Mesh *me, KeyBlock *kb)
++void GeometryExporter::export_key_mesh(Object *ob, Mesh *me, KeyBlock *kb, std::vector<float> &b_x, std::vector<float> &b_y, std::vector<float> &b_z,std::vector<int> &diff)
+ {
+ 	std::string geom_id = get_geometry_id(ob, false) + "_morph_" + translate_id(kb->name);
+ 	std::vector<Normal> nor;
+@@ -192,7 +196,7 @@ void GeometryExporter::export_key_mesh(Object *ob, Mesh *me, KeyBlock *kb)
+ 	openMesh(geom_id, geom_name);
+ 	
+ 	// writes <source> for vertex coords
+-	createVertsSource(geom_id, me);
++	createVertsSource(geom_id, me, b_x, b_y, b_z, diff);
+ 	
+ 	// writes <source> for normal coords
+ 	createNormalsSource(geom_id, me, nor);
+@@ -236,6 +240,10 @@ void GeometryExporter::export_key_mesh(Object *ob, Mesh *me, KeyBlock *kb)
+ 	}
+ 
+ 	closeGeometry();
++	printf("\n++++++++++++++++++\n");
++	for(int i=0; i< diff.size(); i++)	{
++		printf("%d",diff[i]);
++	}
+ }
+ 
+ void GeometryExporter::createLooseEdgeList(Object *ob,
+@@ -405,7 +413,7 @@ void GeometryExporter::createPolylist(short material_index,
+ 
+ 
+ // creates <source> for positions
+-void GeometryExporter::createVertsSource(std::string geom_id, Mesh *me)
++void GeometryExporter::createVertsSource(std::string geom_id, Mesh *me, std::vector<float> &b_x, std::vector<float> &b_y, std::vector<float> &b_z, std::vector<int> &diff, bool is_basis)
+ {
+ #if 0
+ 	int totverts = dm->getNumVerts(dm);
+@@ -418,7 +426,10 @@ void GeometryExporter::createVertsSource(std::string geom_id, Mesh *me)
+ 	source.setId(getIdBySemantics(geom_id, COLLADASW::InputSemantic::POSITION));
+ 	source.setArrayId(getIdBySemantics(geom_id, COLLADASW::InputSemantic::POSITION) +
+ 	                  ARRAY_ID_SUFFIX);
+-	source.setAccessorCount(totverts);
++	if(is_basis)
++		source.setAccessorCount(totverts);
++	else
++		source.setAccessorCount(diff.size());
+ 	source.setAccessorStride(3);
+ 	COLLADASW::SourceBase::ParameterNameList &param = source.getParameterNameList();
+ 	param.push_back("X");
+@@ -430,10 +441,27 @@ void GeometryExporter::createVertsSource(std::string geom_id, Mesh *me)
+ 	//appends data to <float_array>
+ 	int i = 0;
+ 	for (i = 0; i < totverts; i++) {
+-		source.appendValues(verts[i].co[0], verts[i].co[1], verts[i].co[2]);
++		if(is_basis)	{
++			printf("\nPrinting basis list\n");
++			b_x.push_back(verts[i].co[0]);
++			b_y.push_back(verts[i].co[1]);
++			b_z.push_back(verts[i].co[2]);
++			source.appendValues(verts[i].co[0], verts[i].co[1], verts[i].co[2]);
++		}
++		else	{
++			printf("\n %d\n%f\t%f\t%f\n%f\t%f\t%f\n",i,b_x[i],b_y[i],b_z[i],verts[i].co[0],verts[i].co[1],verts[i].co[2]);
++			diff.erase(diff.begin(), diff.begin()+diff.size());
++			printf("$$$new diff.size %d",diff.size());
++			diff.push_back(i);
++			if(b_x[i]!=verts[i].co[0]||b_y[i]!=verts[i].co[1]||b_z[i]!=verts[i].co[2])
++			source.appendValues(verts[i].co[0], verts[i].co[1], verts[i].co[2]);
++		}
++		printf("****");
+ 	}
+ 	
+ 	source.finish();
++	printf("\n+-+- diff.size,%d\ttotverts %d\n",diff.size(),totverts);
++
+ 
+ }
+ 
+@@ -560,6 +588,7 @@ void GeometryExporter::createNormalsSource(std::string geom_id, Mesh *me, std::v
+ 	}
+ 
+ 	source.finish();
++
+ }
+ 
+ void GeometryExporter::create_normals(std::vector<Normal> &normals, std::vector<BCPolygonNormalsIndices> &polygons_normals, Mesh *me)
+@@ -582,6 +611,7 @@ void GeometryExporter::create_normals(std::vector<Normal> &normals, std::vector<
+ 			normals.push_back(n);
+ 			last_normal_index++;
+ 		}
++		printf("\n**** polyindex %d",poly_index);
+ 
+ 
+ 		MLoop *mloop = mloops + mpoly->loopstart;
+@@ -610,7 +640,9 @@ void GeometryExporter::create_normals(std::vector<Normal> &normals, std::vector<
+ 		}
+ 
+ 		polygons_normals.push_back(poly_indices);
++
+ 	}
++	printf("\n*/*/normals.size=%d\tpolygons_normals.size%d*/*/",normals.size(), polygons_normals.size());
+ }
+ 
+ std::string GeometryExporter::getIdBySemantics(std::string geom_id, COLLADASW::InputSemantic::Semantics type, std::string other_suffix)
+diff --git a/source/blender/collada/GeometryExporter.h b/source/blender/collada/GeometryExporter.h
+index 5b67f80..7734992 100644
+--- a/source/blender/collada/GeometryExporter.h
++++ b/source/blender/collada/GeometryExporter.h
+@@ -84,7 +84,7 @@ public:
+ 						std::vector<BCPolygonNormalsIndices>& norind);
+ 	
+ 	// creates <source> for positions
+-	void createVertsSource(std::string geom_id, Mesh *me);
++	void createVertsSource(std::string geom_id, Mesh *me, std::vector<float> &b_x,std::vector<float> &b_y,std::vector<float> &b_z, std::vector<int> &diff, bool is_basis=false);
+ 
+ 	void createVertexColorSource(std::string geom_id, Mesh *me);
+ 
+@@ -105,8 +105,9 @@ public:
+ 
+ 	COLLADASW::URI makeUrl(std::string id);
+ 
+-	void export_key_mesh(Object *ob, Mesh *me, KeyBlock *kb);
+-	
++	void export_key_mesh(Object *ob, Mesh *me, KeyBlock *kb,std::vector<float> &b_x,std::vector<float> &b_y,std::vector<float> &b_z,std::vector<int> &diff);
++
++
+ private:
+ 	std::set<std::string> exportedGeometry;
+ 	
+diff --git a/source/blender/collada/MeshImporter.cpp b/source/blender/collada/MeshImporter.cpp
+index d631a43..fe35a8d 100644
+--- a/source/blender/collada/MeshImporter.cpp
++++ b/source/blender/collada/MeshImporter.cpp
+@@ -173,6 +173,43 @@ void UVDataWrapper::getUV(int uv_index, float *uv)
+ 	}
+ }
+ 
++VCOLDataWrapper::VCOLDataWrapper(COLLADAFW::MeshVertexData& vdata) : mVData(&vdata)
++{
++
++}
++
++void VCOLDataWrapper::getvcol(int v_index, MLoopCol *mloopcol)
++{
++	int stride = mVData->getStride(0);
++	if(stride == 0)  stride =3;
++
++	switch (mVData->getType()) {
++		case COLLADAFW::MeshVertexData::DATA_TYPE_FLOAT:
++		{
++			COLLADAFW::ArrayPrimitiveType<float> *values = mVData->getFloatValues();
++			if (values->empty()) return;
++			mloopcol->r = FTOCHAR((*values)[v_index * stride]);
++			mloopcol->g = FTOCHAR((*values)[v_index * stride + 1]);
++			mloopcol->b = FTOCHAR((*values)[v_index * stride + 2]);
++
++		}
++		break;
++		case COLLADAFW::MeshVertexData::DATA_TYPE_DOUBLE:
++		{
++			COLLADAFW::ArrayPrimitiveType<double> *values = mVData->getDoubleValues();
++			if (values->empty()) return;
++			mloopcol->r = FTOCHAR((*values)[v_index * stride]);
++			mloopcol->g = FTOCHAR((*values)[v_index * stride + 1]);
++			mloopcol->b = FTOCHAR((*values)[v_index * stride + 2]);
++
++		}
++		break;
++		default:
++			fprintf(stderr, "VCOLDataWrapper.getvcol(): unknown data type\n");
++	}
++
++}
++
+ MeshImporter::MeshImporter(UnitConverter *unitconv, ArmatureImporter *arm, Scene *sce) : unitconverter(unitconv), scene(sce), armature_importer(arm) {
+ }
+ 
+@@ -187,6 +224,17 @@ void MeshImporter::set_poly_indices(MPoly *mpoly, MLoop *mloop, int loop_index,
+ 	}
+ }
+ 
++void MeshImporter::set_vcol(MLoopCol *mlc, VCOLDataWrapper &vob, int loop_index, COLLADAFW::IndexList &index_list, int count)
++{
++	COLLADAFW::UIntValuesArray& indices =index_list.getIndices();
++	int index;
++	for(index = 0; index < count; index++,mlc++)
++	{
++		int v_index = indices[index+loop_index];
++		vob.getvcol(v_index,mlc);
++	}
++}
++
+ void MeshImporter::set_face_uv(MLoopUV *mloopuv, UVDataWrapper &uvs,
+                                int start_index, COLLADAFW::IndexList& index_list, int count)
+ {
+@@ -394,6 +442,7 @@ void MeshImporter::allocate_poly_data(COLLADAFW::Mesh *collada_mesh, Mesh *me)
+ 			me->mtpoly  = (MTexPoly *)CustomData_get_layer_n(&me->pdata, CD_MTEXPOLY, 0);
+ 			me->mloopuv = (MLoopUV *) CustomData_get_layer_n(&me->ldata, CD_MLOOPUV, 0);
+ 		}
++
+ 	}
+ }
+ 
+@@ -538,6 +587,7 @@ void MeshImporter::read_polys(COLLADAFW::Mesh *collada_mesh, Mesh *me)
+ 	allocate_poly_data(collada_mesh, me);
+ 
+ 	UVDataWrapper uvs(collada_mesh->getUVCoords());
++	VCOLDataWrapper vcol(collada_mesh->getColors());
+ 
+ 	MPoly *mpoly = me->mpoly;
+ 	MLoop *mloop = me->mloop;
+@@ -547,6 +597,15 @@ void MeshImporter::read_polys(COLLADAFW::Mesh *collada_mesh, Mesh *me)
+ 
+ 	COLLADAFW::MeshPrimitiveArray& prim_arr = collada_mesh->getMeshPrimitives();
+ 	COLLADAFW::MeshVertexData& nor = collada_mesh->getNormals();
++	COLLADAFW::MeshPrimitive *mpa = prim_arr[0];
++
++	MLoopCol *mloopcol;
++	if(mpa->hasColorIndices())
++	{
++		CustomData_add_layer(&me->ldata,CD_MLOOPCOL,CD_DEFAULT,NULL,me->totloop);
++		me->mloopcol = (MLoopCol *) CustomData_get_layer(&me->ldata,CD_MLOOPCOL);
++		mloopcol = (MLoopCol *)CustomData_get_layer(&me->ldata,CD_MLOOPCOL);
++	}
+ 
+ 	for (i = 0; i < prim_arr.getCount(); i++) {
+ 		
+@@ -589,6 +648,7 @@ void MeshImporter::read_polys(COLLADAFW::Mesh *collada_mesh, Mesh *me)
+ 							mpoly->flag |= ME_SMOOTH;
+ 						normal_indices++;
+ 					}
++
+ 				
+ 					mpoly++;
+ 					mloop += 3;
+@@ -634,6 +694,15 @@ void MeshImporter::read_polys(COLLADAFW::Mesh *collada_mesh, Mesh *me)
+ 					if (!is_flat_face(normal_indices, nor, vcount))
+ 						mpoly->flag |= ME_SMOOTH;
+ 				}
++				if(mp->hasColorIndices())
++				{
++					COLLADAFW::IndexListArray& index_list_array_vcolor =mp->getColorIndicesArray();
++					for(unsigned int vcolor_index = 0 ; vcolor_index < index_list_array_vcolor.getCount();vcolor_index++)
++					{
++						MLoopCol *mlc = mloopcol+mpoly->loopstart;
++						set_vcol(mlc, vcol, start_index, *index_list_array_vcolor[vcolor_index],vcount);
++					}
++				}
+ 				
+ 				mpoly++;
+ 				mloop += vcount;
+diff --git a/source/blender/collada/MeshImporter.h b/source/blender/collada/MeshImporter.h
+index 5275420..414ed3e5 100644
+--- a/source/blender/collada/MeshImporter.h
++++ b/source/blender/collada/MeshImporter.h
+@@ -73,10 +73,17 @@ public:
+ #ifdef COLLADA_DEBUG
+ 	void print();
+ #endif
+-
+ 	void getUV(int uv_index, float *uv);
+ };
+ 
++class VCOLDataWrapper
++{
++	COLLADAFW::MeshVertexData *mVData;
++public:
++	VCOLDataWrapper(COLLADAFW::MeshVertexData& vdata);
++	void getvcol(int v_index,MLoopCol *mloopcol);
++};
++
+ class MeshImporter : public MeshImporterBase
+ {
+ private:
+@@ -112,6 +119,11 @@ private:
+ 					 int loop_index,
+ 					 COLLADAFW::IndexList& index_list,
+ 					 int count);
++	void set_vcol(MLoopCol *mloopcol,
++	              VCOLDataWrapper &vob,
++	              int loop_index,
++	              COLLADAFW::IndexList& index_list,
++	              int count);
+ 
+ #ifdef COLLADA_DEBUG
+ 	void print_index_list(COLLADAFW::IndexList& index_list);
